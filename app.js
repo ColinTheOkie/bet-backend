@@ -24,13 +24,21 @@ if (!DATABASE_URL) {
 
 let pool;
 try {
-  // Supabase usually requires SSL. This handles that.
+  if (!DATABASE_URL) throw new Error('DATABASE_URL missing');
+
+  // Parse the URL ourselves to avoid pg’s connectionString quirks
+  const u = new URL(DATABASE_URL.trim());
+
   pool = new Pool({
-    connectionString: DATABASE_URL,
+    host: u.hostname,
+    port: Number(u.port || 5432),
+    user: decodeURIComponent(u.username),
+    password: decodeURIComponent(u.password),
+    database: u.pathname.replace(/^\//, '') || 'postgres',
     ssl: { rejectUnauthorized: false }
   });
 } catch (e) {
-  console.error('FATAL: Failed to create DB pool', e);
+  console.error('FATAL: Failed to create DB pool:', e.message);
   process.exit(1);
 }
 
@@ -250,7 +258,7 @@ app.post('/bets', auth, async (req, res) => {
 app.get('/bets', auth, async (req, res) => {
   try {
     const r = await query(
-      `select b *,
+      `select b.*,
               (b.creator_id = $1) as is_creator,
               (b.status='ACCEPTED' and (b.creator_id=$1 or b.opponent_id=$1)) as can_resolve
        from bets b
